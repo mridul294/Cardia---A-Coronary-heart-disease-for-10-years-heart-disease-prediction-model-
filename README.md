@@ -1,0 +1,2 @@
+# Cardia---A-Coronary-heart-disease-for-10-years-heart-disease-prediction-model-
+Cardia estimates the chance that a person will develop coronary heart disease (CHD) in the next ten years. It uses data that is normally taken during a health check. Cardia accepts fourteen health and lifestyle inputs, such as age, sex, blood pressure, cholesterol, glucose level, body mass index, smoking status and diabetes history. 
