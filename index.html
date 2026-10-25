@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cardia · Heart Risk Predictor</title>
+<meta name="description" content="Estimate your 10-year coronary heart disease risk from routine measurements. Educational model trained on the Framingham Heart Study.">
+<meta name="theme-color" content="#0a0c1c">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23f0527f' d='M12 21s-7.5-4.6-9.6-9.4C.9 8.3 2.8 4.5 6.4 4.5c2.1 0 3.7 1.1 5.6 3.2 1.9-2.1 3.5-3.2 5.6-3.2 3.6 0 5.5 3.8 4 7.1C19.5 16.4 12 21 12 21z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --background: hsl(232, 44%, 7%);
+    --foreground: hsl(232, 30%, 94%);
+    --primary: hsl(258, 78%, 70%);
+    --primary-foreground: hsl(232, 44%, 8%);
+    --accent: hsl(178, 62%, 60%);
+    --muted-foreground: hsl(232, 14%, 62%);
+    --border: hsl(232, 26%, 18%);
+    --card: hsl(232, 38%, 11%);
+    --rose: hsl(342, 90%, 66%);
+    --danger: hsl(2, 88%, 62%);
+    --ok: hsl(160, 60%, 58%);
+
+    --glass-bg: linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.035));
+    --glass-border: rgba(255,255,255,.14);
+    --glass-blur: blur(26px) saturate(180%);
+    --radius: 26px;
+    --risk-hue: 342;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; color-scheme: dark; }
+  body {
+    margin: 0; background: var(--background); color: var(--foreground);
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-weight: 300; font-size: 18px; line-height: 1.7; overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+  section { position: relative; padding: 112px 0; }
+
+  /* ---------- typography ---------- */
+  h1, h2, h3 { font-weight: 700; margin: 0; }
+  h1 { font-size: clamp(46px, 5vw, 84px); line-height: 1.02; letter-spacing: -0.04em; }
+  h2 { font-size: clamp(32px, 4vw, 56px); line-height: 1.08; letter-spacing: -0.03em; }
+  h3 { font-size: 21px; letter-spacing: -0.01em; }
+  .label { font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .16em; color: var(--primary); }
+  .muted { color: var(--muted-foreground); }
+  .grad { background: linear-gradient(100deg, hsl(342,92%,72%), hsl(258,85%,76%) 55%, hsl(178,70%,70%)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* ---------- backdrop: aurora + stars ---------- */
+  .backdrop { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(120px); opacity: .35; will-change: transform; }
+  .blob.a { width: 560px; height: 560px; top: -160px; left: 22%; background: hsl(258,78%,60%); animation: driftA 22s ease-in-out infinite; }
+  .blob.b { width: 520px; height: 520px; top: 8%; right: -80px; background: hsl(178,62%,48%); animation: driftB 22s ease-in-out infinite; }
+  .blob.c { width: 460px; height: 460px; bottom: -120px; left: -80px; background: hsl(342,80%,52%); opacity: .22; animation: driftA 28s ease-in-out infinite reverse; }
+  @keyframes driftA { 0%,100% { transform: translate(0,0); } 50% { transform: translate(160px,60px); } }
+  @keyframes driftB { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-160px,70px); } }
+  .star { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--foreground); }
+  .star.tw { animation: twinkle var(--d,4s) ease-in-out var(--delay,0s) infinite; }
+  @keyframes twinkle { 0%,100% { opacity: .08; } 50% { opacity: .5; } }
+  main, footer, nav { position: relative; z-index: 1; }
+
+  /* ---------- Apple-style glass ---------- */
+  .glass {
+    position: relative; isolation: isolate; overflow: hidden;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.35),
+      inset 0 -1px 0 rgba(255,255,255,.05),
+      inset 0 0 30px rgba(255,255,255,.03),
+      0 24px 60px -20px rgba(0,0,0,.65),
+      0 2px 6px rgba(0,0,0,.3);
+  }
+  /* specular highlight that follows the pointer */
+  .glass::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
+    background: radial-gradient(420px circle at var(--mx, 50%) var(--my, -10%), rgba(255,255,255,.16), transparent 55%);
+    transition: opacity .3s;
+  }
+  /* mirror sheen sweeping across the surface */
+  .glass::after {
+    content: ""; position: absolute; top: -50%; bottom: -50%; left: -60%; width: 40%; z-index: -1; pointer-events: none;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,.10) 50%, transparent);
+    transform: rotate(8deg); animation: sheen 9s ease-in-out infinite;
+  }
+  @keyframes sheen { 0%, 55% { left: -60%; } 100% { left: 160%; } }
+  .glass.lift { transition: transform .35s cubic-bezier(.2,.8,.2,1), border-color .3s; }
+  .glass.lift:hover { transform: translateY(-5px); border-color: rgba(255,255,255,.28); }
+
+  /* ---------- navbar ---------- */
+  nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: 76px; transition: background .3s, backdrop-filter .3s, border-color .3s; border-bottom: 1px solid transparent; }
+  nav.scrolled { background: hsla(232,44%,7%,.62); -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%); border-color: rgba(255,255,255,.08); }
+  nav .wrap { height: 100%; display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; letter-spacing: -.02em; }
+  .brand svg { width: 24px; height: 24px; filter: drop-shadow(0 0 8px hsla(342,90%,60%,.7)); animation: mini 1.2s ease-in-out infinite; }
+  @keyframes mini { 0%,40%,100% { transform: scale(1); } 12% { transform: scale(1.18); } 26% { transform: scale(1.06); } }
+  .links { display: flex; gap: 36px; font-size: 15px; font-weight: 500; color: var(--muted-foreground); }
+  .links a { transition: color .2s; } .links a:hover { color: var(--foreground); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 999px; font: 500 15px/1 "Plus Jakarta Sans", sans-serif; background: var(--primary); color: var(--primary-foreground); border: 0; cursor: pointer; box-shadow: 0 8px 28px -8px hsla(258,78%,70%,.8), inset 0 1px 0 rgba(255,255,255,.45); transition: transform .2s, box-shadow .2s, filter .2s; }
+  .pill:hover { transform: translateY(-2px); filter: brightness(1.08); }
+  .pill.ghost { background: rgba(255,255,255,.08); color: var(--foreground); box-shadow: inset 0 1px 0 rgba(255,255,255,.3); border: 1px solid var(--glass-border); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+  .pill.big { padding: 16px 30px; font-size: 16px; }
+  .pill:disabled { opacity: .6; cursor: wait; transform: none; }
+  .pill:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  /* ---------- hero ---------- */
+  .hero { min-height: 100vh; display: flex; align-items: center; padding: 120px 0 72px; }
+  .hero .wrap { display: grid; grid-template-columns: 58fr 42fr; gap: 48px; align-items: center; width: 100%; }
+  .hero h1 span { display: block; white-space: nowrap; }
+  .hero .sub { max-width: 540px; margin: 28px 0 36px; color: var(--muted-foreground); }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; }
+  .trust { margin-top: 30px; font-size: 14px; color: var(--muted-foreground); display: flex; align-items: center; gap: 10px; }
+  .trust i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+  .monitor { padding: 22px 22px 18px; transform: perspective(1500px) rotateY(-9deg) rotateZ(1.5deg); animation: floaty 6s ease-in-out infinite; }
+  @keyframes floaty { 0%,100% { translate: 0 0; } 50% { translate: 0 -12px; } }
+  .monitor-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .live { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; color: var(--muted-foreground); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--risk-hue),90%,62%); box-shadow: 0 0 12px hsl(var(--risk-hue),90%,62%); animation: blink 1.4s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .bpm { font-weight: 700; font-size: 34px; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+  .bpm small { font-size: 12px; font-weight: 500; letter-spacing: .14em; color: var(--muted-foreground); margin-left: 6px; }
+  .stage { position: relative; aspect-ratio: 1 / 1; margin: 0 -8px; }
+  .stage::before { content: ""; position: absolute; inset: 12%; border-radius: 50%; background: radial-gradient(circle, hsla(var(--risk-hue),90%,60%, calc(.22 + var(--beat, 0) * 1.6)) 0%, transparent 68%); filter: blur(24px); }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ecg { display: block; width: 100%; height: 56px; -webkit-mask-image: linear-gradient(90deg, transparent, #000 25%); mask-image: linear-gradient(90deg, transparent, #000 25%); }
+
+  /* ---------- strip ---------- */
+  .strip { padding: 0; }
+  .strip .glass { border-radius: 999px; padding: 18px 34px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 14px 30px; font-size: 15px; font-weight: 500; }
+  .strip b { font-weight: 700; color: var(--foreground); }
+  .strip .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); }
+
+  /* ---------- pillars ---------- */
+  .head { max-width: 640px; margin-bottom: 56px; }
+  .head h2 { margin-top: 14px; }
+  .head p { color: var(--muted-foreground); margin: 18px 0 0; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .card { padding: 32px 30px 34px; }
+  .card .ico { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 22px; background: rgba(255,255,255,.07); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 0 rgba(255,255,255,.3); color: var(--primary); }
+  .card .ico svg { width: 24px; height: 24px; }
+  .card p { margin: 10px 0 0; color: var(--muted-foreground); font-size: 16px; line-height: 1.65; }
+
+  /* ---------- predictor ---------- */
+  .predict-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 24px; align-items: start; }
+  form.glass { padding: 34px; }
+  .fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 20px; }
+  .field label { display: block; font-size: 13px; font-weight: 500; color: var(--foreground); margin-bottom: 7px; }
+  .field label small { color: var(--muted-foreground); font-weight: 300; }
+  .field input, .field select {
+    width: 100%; padding: 12px 14px; font: 300 16px "Plus Jakarta Sans", sans-serif; color: var(--foreground);
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.13); border-radius: 14px;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+    transition: border-color .2s, background .2s, box-shadow .2s; appearance: none; -webkit-appearance: none;
+  }
+  .field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%23a79bff' stroke-width='2'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+  .field select option { background: hsl(232,38%,11%); color: var(--foreground); }
+  .field input::placeholder { color: hsla(232,14%,62%,.6); }
+  .field input:hover, .field select:hover { background: rgba(255,255,255,.08); }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--primary); background: rgba(255,255,255,.09); box-shadow: 0 0 0 4px hsla(258,78%,70%,.22), inset 0 1px 3px rgba(0,0,0,.3); }
+  .field.bad input, .field.bad select { border-color: var(--danger); }
+  .err { color: hsl(2,90%,72%); font-size: 12.5px; min-height: 1.1em; margin-top: 4px; font-weight: 500; }
+  .form-foot { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+  .form-foot .hint { font-size: 13px; color: var(--muted-foreground); }
+
+  .result { padding: 32px 30px; position: sticky; top: 100px; text-align: center; }
+  .ring { position: relative; width: 210px; height: 210px; margin: 6px auto 18px; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+  .ring .track { fill: none; stroke: rgba(255,255,255,.09); stroke-width: 12; }
+  .ring .bar { opacity: 0; fill: none; stroke: url(#rg); stroke-width: 12; stroke-linecap: round; stroke-dasharray: 0 999; transition: stroke-dasharray 1.3s cubic-bezier(.2,.8,.2,1), opacity .3s; filter: drop-shadow(0 0 10px hsla(var(--risk-hue),90%,60%,.6)); }
+  .ring .mid { position: absolute; inset: 0; display: grid; place-content: center; }
+  .ring .num { font-size: 52px; font-weight: 700; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .ring .cap { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 500; margin-top: 6px; }
+  .badge { display: inline-block; padding: 6px 18px; border-radius: 999px; font-weight: 700; font-size: 14px; background: rgba(255,255,255,.08); border: 1px solid var(--glass-border); }
+  .badge[hidden] { display: none; }
+  .badge.low { color: var(--ok); border-color: hsla(160,60%,58%,.45); background: hsla(160,60%,58%,.12); }
+  .badge.high { color: hsl(2,92%,74%); border-color: hsla(2,88%,62%,.5); background: hsla(2,88%,62%,.14); }
+  .result .explain { font-size: 15px; color: var(--muted-foreground); margin: 16px 0 0; line-height: 1.6; }
+  .result .disc { font-size: 12.5px; color: var(--muted-foreground); margin: 18px 0 0; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1); line-height: 1.55; }
+  .result .idle { color: var(--muted-foreground); font-size: 15px; }
+
+  .stats[hidden] { display: none; }
+  .banner { position: fixed; z-index: 60; top: 88px; left: 50%; transform: translateX(-50%); width: min(92vw, 640px); padding: 14px 20px; border-radius: 18px; font-size: 14px; font-weight: 500; line-height: 1.5; text-align: center; background: hsla(2,88%,62%,.16); border: 1px solid hsla(2,88%,62%,.55); color: hsl(2,92%,82%); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); box-shadow: 0 16px 40px -12px rgba(0,0,0,.6); }
+  .banner[hidden] { display: none; }
+  .banner code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: rgba(255,255,255,.12); padding: 1px 7px; border-radius: 6px; }
+
+  /* ---------- timeline ---------- */
+  .timeline { position: relative; max-width: 760px; margin: 0 auto; padding-left: 40px; }
+  .timeline .line { position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px; background: linear-gradient(to bottom, var(--primary), var(--accent)); transform-origin: top; transform: scaleY(0); transition: transform 1.4s cubic-bezier(.3,.7,.2,1); border-radius: 2px; box-shadow: 0 0 14px hsla(258,78%,70%,.6); }
+  .timeline.in .line { transform: scaleY(1); }
+  .step { position: relative; padding: 0 0 46px; }
+  .step:last-child { padding-bottom: 0; }
+  .step::before { content: ""; position: absolute; left: -40px; top: 9px; width: 16px; height: 16px; border-radius: 50%; background: var(--background); border: 2px solid var(--primary); box-shadow: 0 0 14px hsla(258,78%,70%,.8); }
+  .step .t { font-variant-numeric: tabular-nums; font-weight: 500; font-size: 14px; letter-spacing: .12em; color: var(--accent); }
+  .step h3 { margin: 4px 0 6px; font-size: 24px; }
+  .step p { margin: 0; color: var(--muted-foreground); font-size: 16.5px; }
+
+  /* ---------- model stats ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 22px; }
+  .stat { padding: 26px 24px; }
+  .stat .v { font-size: clamp(34px, 3.4vw, 46px); font-weight: 700; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat .k { margin-top: 10px; font-size: 14px; color: var(--muted-foreground); line-height: 1.5; }
+  .honest { padding: 30px 34px; display: grid; grid-template-columns: auto 1fr; gap: 22px; align-items: start; }
+  .honest .ico { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: hsla(178,62%,60%,.12); border: 1px solid hsla(178,62%,60%,.4); color: var(--accent); }
+  .honest p { margin: 6px 0 0; color: var(--muted-foreground); font-size: 16px; line-height: 1.65; }
+
+  /* ---------- footer ---------- */
+  footer { padding: 56px 0 44px; border-top: 1px solid rgba(255,255,255,.07); }
+  .foot { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 32px; font-size: 14px; color: var(--muted-foreground); }
+  .foot h4 { margin: 0 0 12px; font-size: 12px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; color: var(--foreground); }
+  .foot a { display: block; margin: 6px 0; transition: color .2s; } .foot a:hover { color: var(--foreground); }
+  .copy { margin-top: 36px; font-size: 13px; color: var(--muted-foreground); }
+
+  /* ---------- reveal ---------- */
+  .js .reveal { opacity: 0; transform: translateY(24px); transition: opacity .8s ease, transform .8s cubic-bezier(.2,.8,.2,1); transition-delay: var(--i, 0s); }
+  .js .reveal.in { opacity: 1; transform: none; }
+  .js .rise { opacity: 0; transform: translateY(40px); filter: blur(8px); animation: rise .9s cubic-bezier(.2,.8,.2,1) forwards; animation-delay: calc(var(--i, 0) * .1s + .1s); }
+  @keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+  .js .enter { opacity: 0; transform: scale(.92); animation: enter 1.2s cubic-bezier(.2,.8,.2,1) .3s forwards; }
+  @keyframes enter { to { opacity: 1; transform: none; } }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1000px) {
+    .predict-grid { grid-template-columns: 1fr; }
+    .result { position: static; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 860px) {
+    .hero { padding-top: 104px; }
+    .hero .wrap { grid-template-columns: 1fr; gap: 28px; }
+    .hero h1 span { white-space: normal; }
+    .monitor { order: -1; transform: none; max-width: 440px; margin: 0 auto; width: 100%; }
+    .cards { grid-template-columns: 1fr; }
+    .foot { grid-template-columns: 1fr 1fr; } .foot > :first-child { grid-column: 1 / -1; }
+  }
+  @media (max-width: 767px) {
+    .wrap { padding: 0 20px; }
+    section { padding: 80px 0; }
+    .links { display: none; }
+    .blob.a, .blob.b { width: 320px; height: 320px; }
+    h1 { font-size: 46px; }
+    .fields { grid-template-columns: 1fr; }
+    form.glass { padding: 24px 20px; }
+    .strip .glass { border-radius: 28px; }
+    .honest { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition-duration: .01s !important; }
+    .js .reveal, .js .rise, .js .enter { opacity: 1; transform: none; filter: none; }
+    .timeline .line { transform: scaleY(1); }
+  }
+</style>
+</head>
+<body>
+
+<div class="backdrop" aria-hidden="true">
+  <div class="blob a"></div><div class="blob b"></div><div class="blob c"></div>
+  <div id="stars"></div>
+</div>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Cardia home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7aa8"/><stop offset="1" stop-color="#e0245e"/></linearGradient></defs><path fill="url(#bg1)" d="M12 21s-7.5-4.6-9.6-9.4C.9 8.3 2.8 4.5 6.4 4.5c2.1 0 3.7 1.1 5.6 3.2 1.9-2.1 3.5-3.2 5.6-3.2 3.6 0 5.5 3.8 4 7.1C19.5 16.4 12 21 12 21z"/></svg>
+      Cardia
+    </a>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#predict">Predict</a>
+      <a href="#model">Model</a>
+    </div>
+    <a class="pill" href="#predict">Check my risk</a>
+  </div>
+</nav>
+
+<div class="banner" id="offline" role="alert" hidden></div>
+
+<main id="top">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <div class="label rise" style="--i:0">Early heart-risk screening</div>
+        <h1 style="margin-top:20px">
+          <span class="rise" style="--i:1">Hear your heart</span>
+          <span class="rise" style="--i:2">before it <span class="grad" style="display:inline">raises</span></span>
+          <span class="rise grad" style="--i:3">its voice.</span>
+        </h1>
+        <p class="sub rise" style="--i:4">Cardia estimates your 10-year risk of coronary heart disease from fourteen routine measurements, using a model trained on the Framingham Heart Study. Private, instant, and built to be honest about what it can and can't tell you.</p>
+        <div class="cta rise" style="--i:5">
+          <a class="pill big" href="#predict">Check my risk
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="pill big ghost" href="#how">How it works</a>
+        </div>
+        <div class="trust rise" style="--i:6"><i></i><span id="trustText">Nothing you enter is stored</span></div>
+      </div>
+
+      <div class="glass monitor enter" id="monitor" aria-label="Animated 3D heart model beating at your resting heart rate">
+        <div class="monitor-top">
+          <span class="live"><i></i>Live model</span>
+          <span class="bpm"><span id="bpm">72</span><small>BPM</small></span>
+        </div>
+        <div class="stage" id="stage"><canvas id="heart" role="img" aria-label="3D beating heart"></canvas></div>
+        <canvas class="ecg" id="ecg" aria-hidden="true"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= STRIP ================= -->
+  <section class="strip">
+    <div class="wrap">
+      <div class="glass reveal">
+        <span><b id="rowsStat">4,240</b> participants</span><i class="dot"></i>
+        <span><b>10-year</b> risk horizon</span><i class="dot"></i>
+        <span><b>14</b> routine inputs</span><i class="dot"></i>
+        <span>“Educational, not a diagnosis.”</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PILLARS ================= -->
+  <section>
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="label">Why Cardia</div>
+        <h2>Risk you can read at a glance.</h2>
+        <p>No lab report to decode. Enter what you already know from a routine check-up and get one number, with the reasoning kept simple.</p>
+      </div>
+      <div class="cards">
+        <div class="glass card lift reveal" style="--i:.0s">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg></div>
+          <h3>Early, not late</h3>
+          <p>Looks ten years ahead from blood pressure, cholesterol, glucose, smoking and age, long before symptoms.</p>
+        </div>
+        <div class="glass card lift reveal" style="--i:.1s">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg></div>
+          <h3>Simple on purpose</h3>
+          <p>A transparent logistic-regression model won over heavier ones in testing. Same accuracy, and far easier to explain.</p>
+        </div>
+        <div class="glass card lift reveal" style="--i:.2s">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+          <h3>Private by default</h3>
+          <p>Your numbers are used for one prediction and discarded. No account, no database, no tracking.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PREDICT ================= -->
+  <section id="predict">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="label">Risk estimate</div>
+        <h2>Tell us about your last check-up.</h2>
+        <p>Optional fields can be left blank. The model fills gaps the same way it learned to from real patient records.</p>
+      </div>
+
+      <div class="predict-grid">
+        <form id="form" class="glass reveal" novalidate>
+          <div class="fields" id="fields" aria-live="polite"></div>
+          <div class="form-foot">
+            <button type="submit" class="pill big" id="go">Predict my risk</button>
+            <span class="hint">Takes under a second · nothing is saved</span>
+          </div>
+        </form>
+
+        <aside class="glass result reveal" id="result" style="--i:.12s" aria-live="polite">
+          <div class="ring">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="hsl(178,70%,62%)"/><stop offset=".55" stop-color="hsl(258,85%,72%)"/><stop offset="1" id="rg-end" stop-color="hsl(342,90%,66%)"/>
+              </linearGradient></defs>
+              <circle class="track" cx="60" cy="60" r="52"/>
+              <circle class="bar" id="bar" cx="60" cy="60" r="52"/>
+            </svg>
+            <div class="mid"><div class="num" id="pct">–</div><div class="cap">10-year risk</div></div>
+          </div>
+          <div id="badge" class="badge" hidden></div>
+          <p class="explain idle" id="explain">Your estimate appears here, and the heart above will tint to match it.</p>
+          <p class="disc" id="disclaimer">Educational model, not clinically validated. Not medical advice.</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW IT WORKS ================= -->
+  <section id="how">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="label">How it works</div>
+        <h2>From check-up numbers to one clear estimate.</h2>
+      </div>
+      <div class="timeline" id="timeline">
+        <div class="line"></div>
+        <div class="step reveal"><div class="t">STEP 01</div><h3>Enter your measurements</h3><p>Age, blood pressure, cholesterol, glucose, smoking and a few yes/no history questions. Anything you don't know can stay blank.</p></div>
+        <div class="step reveal" style="--i:.1s"><div class="t">STEP 02</div><h3>Compare with real patient patterns</h3><p>The model was trained on thousands of Framingham participants who were followed for ten years.</p></div>
+        <div class="step reveal" style="--i:.2s"><div class="t">STEP 03</div><h3>Get a risk percentage</h3><p>Scores above the model's alert threshold are flagged as higher risk. The threshold was chosen to balance missed cases against false alarms.</p></div>
+        <div class="step reveal" style="--i:.3s"><div class="t">STEP 04</div><h3>Take it to a professional</h3><p>This is a screening aid for learning, not a diagnosis. A high score is a reason to talk to a doctor, not to worry.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MODEL ================= -->
+  <section id="model">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="label">The model, honestly</div>
+        <h2>What the numbers really say.</h2>
+        <p>Measured on patients the model never saw during training.</p>
+      </div>
+      <div class="stats" id="stats" hidden></div>
+      <div class="glass honest reveal">
+        <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg></div>
+        <div>
+          <h3>A screening aid, not a verdict</h3>
+          <p>Most people in this dataset never developed heart disease, so a model that always says “healthy” would score a high accuracy and still be useless. That's why Cardia reports ranking quality and recall instead. Predicting ten years ahead from routine measurements is genuinely hard: even established clinical risk scores land near 0.75 AUC. Treat every result as a conversation starter for a doctor's visit.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <div class="brand" style="margin-bottom:12px;color:var(--foreground)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="url(#bg1)" d="M12 21s-7.5-4.6-9.6-9.4C.9 8.3 2.8 4.5 6.4 4.5c2.1 0 3.7 1.1 5.6 3.2 1.9-2.1 3.5-3.2 5.6-3.2 3.6 0 5.5 3.8 4 7.1C19.5 16.4 12 21 12 21z"/></svg>Cardia
+        </div>
+        Educational model trained on the Framingham Heart Study. Not clinically validated and not a substitute for professional medical advice.
+      </div>
+      <div><h4>Explore</h4><a href="#how">How it works</a><a href="#predict">Predict</a><a href="#model">Model</a></div>
+      <div><h4>Project</h4><a href="/health" id="apiLink">API status</a><span>POST /predict (JSON)</span></div>
+    </div>
+    <div class="copy">© 2026 Cardia · Final-year project</div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  "use strict";
+  const root = document.documentElement;
+  root.classList.add("js");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+
+  /* ---------- star field (pure divs) ---------- */
+  const stars = $("stars");
+  for (let i = 0; i < 44; i++) {
+    const s = document.createElement("i");
+    s.className = "star" + (i % 4 === 0 ? " tw" : "");
+    s.style.left = Math.random() * 100 + "%";
+    s.style.top = Math.random() * 100 + "%";
+    const size = Math.random() < .3 ? 2 : 1;
+    s.style.width = s.style.height = size + "px";
+    s.style.opacity = (0.1 + Math.random() * 0.2).toFixed(2);
+    s.style.setProperty("--d", (3 + Math.random() * 2).toFixed(1) + "s");
+    s.style.setProperty("--delay", (Math.random() * 4).toFixed(1) + "s");
+    stars.appendChild(s);
+  }
+
+  /* ---------- navbar ---------- */
+  const nav = $("nav");
+  const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > 24);
+  window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+  /* ---------- pointer-tracked glass specular highlight ---------- */
+  document.querySelectorAll(".glass").forEach((el) => {
+    el.addEventListener("pointermove", (e) => {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
+      el.style.setProperty("--my", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
+    });
+  });
+
+  /* ---------- scroll reveal ---------- */
+  const reveals = document.querySelectorAll(".reveal");
+  const timeline = $("timeline");
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
+    }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+    reveals.forEach((el) => io.observe(el));
+    io.observe(timeline);
+  } else {
+    reveals.forEach((el) => el.classList.add("in")); timeline.classList.add("in");
+  }
+
+  /* =====================================================
+     3D BEATING HEART  (canvas point-cloud, no libraries)
+     ===================================================== */
+  const state = { bpm: 72, hue: 342, targetHue: 342, amp: 1, targetAmp: 1, mx: 0, my: 0 };
+  const canvas = $("heart"), ctx = canvas.getContext("2d");
+  const ecgCanvas = $("ecg"), ectx = ecgCanvas.getContext("2d");
+  const stage = $("stage"), bpmEl = $("bpm");
+
+  // Heart surface: the classic 2D heart outline, swept into a pillowed 3D shell.
+  const N = 9000, T = 8.5;
+  const P = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const u = Math.random() * Math.PI * 2;
+    const c = Math.random() * 2 - 1;            // cos(v), uniform
+    const s = Math.sqrt(1 - c * c);
+    const hx = 16 * Math.pow(Math.sin(u), 3);
+    const hy = 13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u);
+    P[i * 3]     = hx * s;
+    P[i * 3 + 1] = -(hy * s + 2.2);             // canvas y points down; recentre
+    P[i * 3 + 2] = T * c * (0.55 + 0.45 * s);
+  }
+
+  const gauss = (x, w) => Math.exp(-(x * x) / (w * w));
+  const wrap = (d) => ((d + 0.5) % 1 + 1) % 1 - 0.5;
+  // "lub-dub": strong first pulse, softer second
+  const beatCurve = (p) => 0.085 * gauss(wrap(p - 0.05), 0.05) + 0.048 * gauss(wrap(p - 0.31), 0.04);
+  // PQRST ECG shape, R-peak aligned with the first pulse
+  const ecgCurve = (p) => {
+    const q = p - 0.05;
+    return 0.11 * gauss(wrap(q + 0.2), 0.035)
+         - 0.14 * gauss(wrap(q + 0.022), 0.011)
+         + 1.00 * gauss(wrap(q), 0.014)
+         - 0.24 * gauss(wrap(q - 0.032), 0.012)
+         + 0.26 * gauss(wrap(q - 0.27), 0.055);
+  };
+
+  const ECG_SPEED = 170;                 // trace scroll speed, pixels per second (frame-rate independent)
+  let phase = 0, ecgAcc = 0;
+  let W = 0, H = 0, dpr = 1, EW = 0, EH = 0, ecgBuf = [];
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = stage.getBoundingClientRect();
+    W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height));
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const er = ecgCanvas.getBoundingClientRect();
+    EW = Math.max(1, Math.round(er.width)); EH = Math.max(1, Math.round(er.height));
+    ecgCanvas.width = EW * dpr; ecgCanvas.height = EH * dpr;
+    // pre-fill the trace so it is already full when the page loads
+    ecgBuf = Array.from({ length: EW }, (_, i) =>
+      ecgCurve(((phase - (EW - 1 - i) / ECG_SPEED * state.bpm / 60) % 1 + 1) % 1));
+  }
+  resize();
+  new ResizeObserver(resize).observe(stage);
+  window.addEventListener("resize", resize);
+
+  document.addEventListener("pointermove", (e) => {
+    state.mx = (e.clientX / window.innerWidth - 0.5) * 2;
+    state.my = (e.clientY / window.innerHeight - 0.5) * 2;
+  }, { passive: true });
+
+  let visible = true;
+  new IntersectionObserver((e) => { visible = e[0].isIntersecting; }).observe($("monitor"));
+
+  const BINS = 4;
+  let last = performance.now(), t0 = last, yaw = 0, pitch = 0, beatNow = 0;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!visible || document.hidden) { last = now; return; }
+    const dt = Math.min((now - last) / 1000, 0.05); last = now;
+    const t = (now - t0) / 1000;
+
+    phase = (phase + dt * state.bpm / 60) % 1;
+    // shortest way round the colour wheel (342° → 2° must not pass through cyan)
+    const hueDiff = ((state.targetHue - state.hue + 540) % 360) - 180;
+    state.hue = (state.hue + hueDiff * Math.min(1, dt * 3) + 360) % 360;
+    state.amp += (state.targetAmp - state.amp) * Math.min(1, dt * 3);
+    beatNow = beatCurve(phase) * state.amp;
+    stage.style.setProperty("--beat", beatNow.toFixed(4));
+    root.style.setProperty("--risk-hue", state.hue.toFixed(1));
+
+    // gentle sway + pointer tilt
+    const targetYaw = (reduce ? 0 : Math.sin(t * 0.55) * 0.38) + state.mx * 0.3;
+    const targetPitch = -0.06 + state.my * 0.18;
+    yaw += (targetYaw - yaw) * Math.min(1, dt * 4);
+    pitch += (targetPitch - pitch) * Math.min(1, dt * 4);
+
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const unit = Math.min(W, H) / 41 * (1 + beatNow);
+    const cx = W / 2, cyy = H / 2, camera = 90;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";
+
+    const paths = [];
+    for (let b = 0; b < BINS; b++) paths.push(new Path2D());
+    for (let i = 0; i < N; i++) {
+      const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
+      // rotate Y then X
+      const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
+      const y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+      const k = camera / (camera - z2 * 0.9);
+      const px = cx + x1 * unit * k, py = cyy + y2 * unit * k;
+      // depth 0 (back) → 1 (front)
+      const d = Math.min(0.999, Math.max(0, (z2 + 10) / 20));
+      const bin = (d * BINS) | 0;
+      const r = (0.55 + d * 1.15) * (unit / 8.5) * k;
+      paths[bin].moveTo(px + r, py);
+      paths[bin].arc(px, py, r, 0, 6.2832);
+    }
+    for (let b = 0; b < BINS; b++) {
+      const d = (b + 0.5) / BINS;
+      const light = 52 + d * 24;
+      ctx.fillStyle = `hsla(${state.hue}, 92%, ${light}%, ${0.22 + d * 0.55})`;
+      ctx.fill(paths[b]);
+    }
+    ctx.globalCompositeOperation = "source-over";
+
+    /* ---------- ECG trace ---------- */
+    ecgAcc += dt * ECG_SPEED;
+    const n = Math.min(Math.floor(ecgAcc), EW);
+    ecgAcc -= n;
+    for (let s = 0; s < n; s++) {
+      const p = (((phase - (n - 1 - s) / ECG_SPEED * state.bpm / 60) % 1) + 1) % 1;
+      ecgBuf.push(ecgCurve(p)); ecgBuf.shift();
+    }
+    ectx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ectx.clearRect(0, 0, EW, EH);
+    ectx.lineWidth = 2; ectx.lineJoin = "round"; ectx.lineCap = "round";
+    ectx.strokeStyle = `hsl(${state.hue}, 92%, 70%)`;
+    ectx.shadowColor = `hsl(${state.hue}, 95%, 60%)`; ectx.shadowBlur = 10;
+    ectx.beginPath();
+    const base = EH * 0.72, amp = EH * 0.62;
+    for (let i = 0; i < EW; i++) {
+      const y = base - ecgBuf[i] * amp;
+      i ? ectx.lineTo(i, y) : ectx.moveTo(i, y);
+    }
+    ectx.stroke();
+  }
+  requestAnimationFrame(frame);
+
+  /* Heart rate follows the "Resting heart rate" input (delegated: fields are rendered by JS) */
+  const setBpm = (v) => { state.bpm = v; bpmEl.textContent = Math.round(v); };
+  $("form").addEventListener("input", (e) => {
+    if (e.target && e.target.id === "heartRate") {
+      const v = parseFloat(e.target.value);
+      if (isFinite(v)) setBpm(Math.min(160, Math.max(40, v)));
+    }
+  });
+
+  /* ---------- connection to app.py ---------- */
+  // Served by Flask  -> same origin, relative URLs.
+  // Opened as a file -> talk to the local Flask server directly.
+  const API = location.protocol === "file:" ? "http://127.0.0.1:5000" : "";
+  $("apiLink").href = API + "/health";
+
+  // Used only if app.py cannot be reached. Must mirror FIELDS in app.py.
+  const FALLBACK_FIELDS = [
+    { name: "age", label: "Age (years)", kind: "num", min: 18, max: 100, required: true },
+    { name: "male", label: "Sex", kind: "bin", required: true, choices: [{ value: 1, label: "Male" }, { value: 0, label: "Female" }] },
+    { name: "sysBP", label: "Systolic blood pressure (mmHg)", kind: "num", min: 70, max: 300, required: true },
+    { name: "diaBP", label: "Diastolic blood pressure (mmHg)", kind: "num", min: 40, max: 160, required: true },
+    { name: "totChol", label: "Total cholesterol (mg/dL)", kind: "num", min: 80, max: 700, required: false },
+    { name: "BMI", label: "BMI (kg/m²)", kind: "num", min: 12, max: 60, required: false },
+    { name: "heartRate", label: "Resting heart rate (bpm)", kind: "num", min: 35, max: 200, required: false },
+    { name: "glucose", label: "Glucose (mg/dL)", kind: "num", min: 30, max: 600, required: false },
+    { name: "currentSmoker", label: "Current smoker", kind: "bin", required: true },
+    { name: "cigsPerDay", label: "Cigarettes per day", kind: "num", min: 0, max: 100, required: false },
+    { name: "BPMeds", label: "On blood pressure medication", kind: "bin", required: true },
+    { name: "prevalentStroke", label: "History of stroke", kind: "bin", required: true },
+    { name: "prevalentHyp", label: "Hypertensive", kind: "bin", required: true },
+    { name: "diabetes", label: "Diabetic", kind: "bin", required: true },
+  ];
+
+  const el = (tag, attrs = {}, text) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+
+  function renderFields(fields) {
+    const box = $("fields");
+    box.textContent = "";
+    for (const f of fields) {
+      const wrap = el("div", { class: "field", id: "field-" + f.name });
+      const label = el("label", { for: f.name }, f.label);
+      if (!f.required) label.append(" ", el("small", {}, "(optional)"));
+      wrap.append(label);
+      if (f.kind === "bin") {
+        const sel = el("select", { id: f.name, name: f.name });
+        const choices = f.choices || [{ value: 0, label: "No" }, { value: 1, label: "Yes" }];
+        for (const c of choices) sel.append(el("option", { value: c.value }, c.label));
+        wrap.append(sel);
+      } else {
+        const inp = el("input", {
+          id: f.name, name: f.name, type: "number", inputmode: "decimal", step: "any",
+          min: f.min, max: f.max, placeholder: f.min + " – " + f.max,
+        });
+        if (f.required) inp.required = true;
+        wrap.append(inp);
+      }
+      wrap.append(el("div", { class: "err", id: "err-" + f.name, role: "alert" }));
+      box.append(wrap);
+    }
+  }
+
+  function renderModelInfo(cfg) {
+    const m = cfg.metrics || {};
+    if (m.rows) {
+      const n = Number(m.rows).toLocaleString("en-US");
+      $("rowsStat").textContent = n;
+      $("trustText").textContent = "Trained on " + n + " participants · nothing you enter is stored";
+    }
+    const t = m.test;
+    if (!t) return;
+    const cards = [
+      [t.roc_auc.toFixed(2), "ROC-AUC, how well it ranks risky above safe (0.5 = coin flip)"],
+      [Math.round(t.recall * 100) + "%", "of people who went on to develop disease were flagged"],
+      [Math.round(t.precision * 100) + "%", "of flagged people actually developed disease"],
+      [(cfg.threshold * 100).toFixed(1) + "%", "risk level at which the model raises a flag"],
+    ];
+    const box = $("stats");
+    box.textContent = "";
+    cards.forEach(([v, k], i) => {
+      const c = el("div", { class: "glass stat reveal in" });
+      c.style.setProperty("--i", (i * 0.08) + "s");
+      c.append(el("div", { class: "v" }, v), el("div", { class: "k" }, k));
+      c.addEventListener("pointermove", (e) => {
+        const r = c.getBoundingClientRect();
+        c.style.setProperty("--mx", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
+        c.style.setProperty("--my", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
+      });
+      box.append(c);
+    });
+    box.hidden = false;
+  }
+
+  async function loadConfig() {
+    const banner = $("offline");
+    try {
+      const res = await fetch(API + "/api/config", { headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const cfg = await res.json();
+      renderFields(cfg.fields);
+      renderModelInfo(cfg);
+      banner.hidden = true;
+    } catch (err) {
+      renderFields(FALLBACK_FIELDS);
+      banner.hidden = false;
+      banner.textContent = "";
+      banner.append("Can't reach the prediction server. In your project folder run ",
+        el("code", {}, "python app.py"), " and open ", el("code", {}, "http://127.0.0.1:5000"), ".");
+    }
+  }
+  loadConfig();
+
+  /* ---------- form → /predict ---------- */
+  const form = $("form"), go = $("go");
+  const bar = $("bar"), pct = $("pct"), badge = $("badge"), explain = $("explain"), disclaimer = $("disclaimer");
+  const C = 2 * Math.PI * 52;
+
+  function clearErrors() {
+    document.querySelectorAll(".err").forEach((e) => (e.textContent = ""));
+    document.querySelectorAll(".field.bad").forEach((e) => e.classList.remove("bad"));
+  }
+  function countUp(to) {
+    if (reduce) { pct.textContent = to.toFixed(1) + "%"; return; }
+    const from = 0, dur = 1100, s = performance.now();
+    (function step(n) {
+      const k = Math.min(1, (n - s) / dur), e = 1 - Math.pow(1 - k, 3);
+      pct.textContent = (from + (to - from) * e).toFixed(1) + "%";
+      if (k < 1) requestAnimationFrame(step);
+    })(s);
+  }
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    clearErrors();
+    const payload = Object.fromEntries(new FormData(form).entries());
+    go.disabled = true; go.textContent = "Analysing…";
+    try {
+      const res = await fetch(API + "/predict", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        let first = null;
+        for (const [name, msg] of Object.entries(data.fields || {})) {
+          const el = $("err-" + name), box = $("field-" + name);
+          if (el) el.textContent = msg;
+          if (box) { box.classList.add("bad"); first = first || box; }
+        }
+        if (first) first.querySelector("input,select").focus({ preventScroll: false });
+        else alert(data.error || "Something went wrong.");
+        return;
+      }
+      const risk = Math.min(100, data.risk_percent);
+      bar.style.opacity = 1;
+      bar.style.strokeDasharray = `${(risk / 100) * C} 999`;
+      countUp(risk);
+      badge.hidden = false;
+      badge.textContent = data.risk_label;
+      badge.className = "badge " + (data.high_risk ? "high" : "low");
+      explain.classList.remove("idle");
+      explain.textContent = (data.high_risk
+        ? "Above the model's alert level of " + data.threshold_percent + "%. This is a reason to discuss your heart health with a doctor."
+        : "Below the model's alert level of " + data.threshold_percent + "%. Keep up routine check-ups.")
+        + " Estimated chance of coronary heart disease within 10 years.";
+      disclaimer.textContent = data.disclaimer;
+      // tint + intensify the heart by risk
+      state.targetHue = data.high_risk ? 2 : 330;
+      state.targetAmp = data.high_risk ? 1.45 : 1;
+      document.documentElement.style.setProperty("--risk-end", data.high_risk ? "hsl(2,90%,62%)" : "hsl(342,90%,66%)");
+      $("rg-end").setAttribute("stop-color", data.high_risk ? "hsl(2,90%,62%)" : "hsl(342,90%,66%)");
+      $("result").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
+    } catch (e) {
+      $("offline").hidden = false;
+      $("offline").textContent = "Could not reach the prediction server. Start it with: python app.py";
+    } finally {
+      go.disabled = false; go.textContent = "Predict my risk";
+    }
+  });
+})();
+</script>
+</body>
+</html>
